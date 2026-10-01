@@ -116,3 +116,18 @@ docker compose logs --tail 200 worker
 Application logs are JSON with UTC time, process ID, event, PC/photo identifiers, step durations in milliseconds, and full exception tracebacks. Events cover uploads, queue claims, model initialization, prediction, image/JSON saving, result persistence, queue completion, exports, and deletion. Mutating HTTP requests return an `X-Request-ID` for matching logs. Successful UI polling is omitted at INFO to reduce noise. Set `LOG_LEVEL=DEBUG` in `.env` and restart services to enable library debug messages. Logs rotate at 10 MB with three files per container. Tokens and request bodies are not logged by application tracing.
 
 Each PC displays OCR processing time in seconds. It measures the latest attempt, including model initialization when needed, inference, and saving annotated images/JSON; queue waiting time is excluded. Older results without timing display “Not recorded for this photo” until reprocessed.
+
+## Excel SKU inventory report
+
+```sh
+docker compose exec -T web python export_excel.py
+docker compose cp web:/app/instance/exports/pc-inventory.xlsx ./pc-inventory.xlsx
+```
+
+The workbook contains **SKU totals** (number of PCs and a location breakdown), **Location counts** (one SKU/row/column per line), **PC details**, **Needs review**, and **Report info**. It reads a snapshot of PostgreSQL without changing inventory. Only completed OCR with one unique SKU identified by a `SKU:` label or a code starting with `CLP` is counted by SKU; repeated identical labels are accepted, casing is normalized, and ambiguous or missing labels are listed for review. PCs still queued or processing are also listed for review; regenerate after OCR finishes.
+
+Local usage with `DATABASE_URL` configured:
+
+```sh
+python export_excel.py --output ./pc-inventory.xlsx
+```

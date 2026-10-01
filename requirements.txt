@@ -7,3 +7,4 @@ transformers>=5.8,<6
 torch>=2.6,<3
 torchvision>=0.21,<1
 paddlepaddle>=3.3,<4
+openpyxl>=3.1,<4

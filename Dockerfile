@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2
 COPY requirements.txt ./
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py init_db.py ocr.py backfill_ocr.py worker.py diagnostics.py ./
+COPY app.py init_db.py ocr.py backfill_ocr.py worker.py diagnostics.py export_excel.py ./
 COPY --from=frontend /build/dist ./frontend/dist
 RUN useradd --uid 10001 --create-home shelf && mkdir -p /app/instance && chown shelf:shelf /app/instance
 ENV HOME=/app/instance OMP_NUM_THREADS=2
