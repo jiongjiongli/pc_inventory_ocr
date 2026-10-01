@@ -1,0 +1,66 @@
+services:
+  web:
+    build: .
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_TOKEN: ${HF_TOKEN:-}
+      DATABASE_URL: postgresql://shelf:${POSTGRES_PASSWORD:-shelf-local-password}@db:5432/shelf
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-8080}:8000"
+    volumes:
+      - shelf-data:/app/instance
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+  worker:
+    build: .
+    command: ["python", "worker.py"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_TOKEN: ${HF_TOKEN:-}
+      DATABASE_URL: postgresql://shelf:${POSTGRES_PASSWORD:-shelf-local-password}@db:5432/shelf
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - shelf-data:/app/instance
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: shelf
+      POSTGRES_USER: shelf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shelf-local-password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shelf -d shelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  shelf-data:
+  postgres-data:
