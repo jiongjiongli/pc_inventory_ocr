@@ -6,5 +6,7 @@ instance
 frontend/node_modules
 frontend/dist
 .env
-tests
+backend/tests
 templates
+docs
+*.xlsx

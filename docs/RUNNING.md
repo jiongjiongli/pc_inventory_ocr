@@ -26,16 +26,17 @@ JPEG, PNG, and WebP are supported. Convert HEIC to JPEG if needed. Uploads are l
 
 ## Local development
 
-Backend:
+Run the following backend commands from the repository root:
 
 ```sh
 source ~/py_env/py310/bin/activate
+cd backend
 pip install -r requirements.txt
 export DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/shelf"
 python app.py
 ```
 
-Frontend (Node 22.12 or newer):
+Frontend (Node 22.12 or newer), in another terminal from the repository root:
 
 ```sh
 cd frontend
@@ -44,6 +45,8 @@ npm run dev
 ```
 
 Open the Vite URL (normally http://localhost:5173). Its development proxy forwards `/api` and `/photos` to Flask on port 5000. For a local frontend production build, run `npm run build`; Flask then serves it at http://localhost:5000.
+
+From `backend/`, run tests with a dedicated test database:
 
 ```sh
 TEST_DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/shelf_test" python -m unittest discover -s tests -v
@@ -102,7 +105,7 @@ Failed jobs get up to three attempts. Worker restarts recover interrupted jobs. 
 
 `Delete Item` removes the database record, photo, and OCR output; the page asks before deleting.
 
-For local development, start `python worker.py` in a separate terminal with the same `DATABASE_URL`, `SHELF_DATA_DIR`, and optional `HF_TOKEN` as the backend.
+For local development, start `python worker.py` from `backend/` in a separate terminal with the same `DATABASE_URL`, `SHELF_DATA_DIR`, and optional `HF_TOKEN` as the backend.
 
 ## JSON export and debug logs
 
@@ -121,15 +124,16 @@ Each PC displays OCR processing time in seconds. It measures the latest attempt,
 
 ```sh
 docker compose exec -T web python export_excel.py
-docker compose cp web:/app/instance/exports/pc-inventory.xlsx ./pc-inventory.xlsx
+mkdir -p instance/exports
+docker compose cp web:/app/instance/exports/pc-inventory.xlsx ./instance/exports/pc-inventory.xlsx
 ```
 
 The workbook contains **SKU totals** (number of PCs and a location breakdown), **Location counts** (one SKU/row/column per line), **PC details**, **Needs review**, and **Report info**. It reads a snapshot of PostgreSQL without changing inventory. Only completed OCR with one unique SKU identified by a `SKU:` label or a code starting with `CLP` is counted by SKU; repeated identical labels are accepted, casing is normalized, and ambiguous or missing labels are grouped as NO_SKU and listed for review. PCs still queued or processing are also listed for review; regenerate after OCR finishes.
 
-Local usage with `DATABASE_URL` configured:
+Local usage from `backend/` with `DATABASE_URL` configured:
 
 ```sh
-python export_excel.py --output ./pc-inventory.xlsx
+python export_excel.py --output ../instance/exports/pc-inventory.xlsx
 ```
 
 Each item shows the preprocessor's rotated box image beside its recognized SKU and the confidence of the matching OCR line (the lowest score when the SKU appears on multiple lines). Click the image to open it at full size. Original photos, annotated OCR images, and full OCR text are hidden from the item view. Rotated images are saved as `instance/ocr/<photo-id>/rot_img.png`; requeue existing photos with `docker compose exec -T web python backfill_ocr.py --all` to generate them.

@@ -12,10 +12,11 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from diagnostics import configure_logging, event, step
 configure_logging()
 
-FRONTEND = Path(__file__).parent / 'frontend' / 'dist'
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND = PROJECT_ROOT / 'frontend' / 'dist'
 app = Flask(__name__, static_folder=str(FRONTEND / 'assets'), static_url_path='/assets')
 app.config.update(MAX_CONTENT_LENGTH=16 * 1024 * 1024)
-DATA = Path(os.environ.get('SHELF_DATA_DIR', Path(__file__).parent / 'instance'))
+DATA = Path(os.environ.get('SHELF_DATA_DIR', PROJECT_ROOT / 'instance'))
 UPLOADS = DATA / 'uploads'
 UPLOADS.mkdir(parents=True, exist_ok=True)
 
