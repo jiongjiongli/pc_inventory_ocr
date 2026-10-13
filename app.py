@@ -6,7 +6,7 @@ import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from flask import Flask, abort, jsonify, request, send_from_directory, g
+from flask import Flask, abort, jsonify, request, send_from_directory, send_file, g
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from diagnostics import configure_logging, event, step
@@ -64,8 +64,38 @@ def index():
 def serialize(pc):
     result_image = DATA / 'ocr' / Path(pc['photo']).stem / (Path(pc['photo']).stem + '_ocr_res_img.jpg')
     return {**dict(pc), 'photo_url': '/photos/' + pc['photo'],
+            'rotated_image_url': f'/pcs/{pc["id"]}/rotated-image' if (result_image.parent / 'rot_img.png').is_file() else None,
+            'rotated_180_image_url': f'/pcs/{pc["id"]}/rotated-image-180' if (result_image.parent / 'rot_img.png').is_file() else None,
             'ocr_image_url': f'/pcs/{pc["id"]}/ocr-image' if result_image.is_file() else None,
             'ocr_json_url': f'/api/pcs/{pc["id"]}/ocr.json' if pc['ocr_status'] in ('completed', 'empty') else None}
+
+@app.get('/pcs/<int:pc_id>/rotated-image')
+def rotated_image(pc_id):
+    with database() as db:
+        pc = db.execute('SELECT photo FROM pcs WHERE id=%s', (pc_id,)).fetchone()
+    if pc is None:
+        abort(404)
+    return send_from_directory(DATA / 'ocr' / Path(pc['photo']).stem, 'rot_img.png')
+
+@app.get("/pcs/<int:pc_id>/rotated-image-180")
+def rotated_image_180(pc_id):
+    with database() as db:
+        pc = db.execute("SELECT photo FROM pcs WHERE id=%s", (pc_id,)).fetchone()
+    if pc is None:
+        abort(404)
+    directory = DATA / "ocr" / Path(pc["photo"]).stem
+    if (directory / "rot_img_180.png").is_file():
+        return send_from_directory(directory, "rot_img_180.png")
+    # Existing records can show the second preview without rerunning OCR.
+    from io import BytesIO
+    from flask import send_file
+    if not (directory / "rot_img.png").is_file():
+        abort(404)
+    with Image.open(directory / "rot_img.png") as image:
+        buffer = BytesIO()
+        image.transpose(Image.Transpose.ROTATE_180).save(buffer, format="PNG")
+    buffer.seek(0)
+    return send_file(buffer, mimetype="image/png")
 
 @app.get('/pcs/<int:pc_id>/ocr-image')
 def ocr_image(pc_id):
@@ -93,6 +123,25 @@ def download_ocr_json(pc_id):
     response = jsonify(pc_id=pc_id, photo=pc['photo'], status=pc['ocr_status'],
                        text=pc['ocr_text'], confidence=pc['ocr_confidence'], lines=pc['ocr_lines'], duration_seconds=pc['ocr_duration_seconds'])
     response.headers['Content-Disposition'] = f'attachment; filename="PC-{pc_id}-ocr.json"'
+    return response
+
+@app.get("/api/pc-inventory.xlsx")
+def download_inventory():
+    from io import BytesIO
+    from export_excel import build_workbook
+    with database() as db:
+        records = db.execute(
+            "SELECT id, row_number, column_number, pc_type, ocr_text, ocr_status, ocr_confidence "
+            "FROM pcs ORDER BY row_number, column_number, id"
+        ).fetchall()
+    output = BytesIO()
+    with step("inventory.export", trace_id=g.trace_id):
+        counts = build_workbook(records, output)
+    event("inventory.download", trace_id=g.trace_id, **counts)
+    output.seek(0)
+    response = send_file(output, as_attachment=True, download_name="pc-inventory.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 @app.get('/api/pcs')

@@ -75,6 +75,46 @@ class ShelfTests(unittest.TestCase):
         self.assertFalse(output.exists())
         self.assertEqual(self.client.get(f'/api/pcs/{pc["id"]}').status_code, 404)
 
+    def test_rotated_image_serving_and_cleanup(self):
+        pc = self.add()
+        route = f'/pcs/{pc["id"]}/rotated-image'
+        self.assertIsNone(pc['rotated_image_url'])
+        self.assertEqual(self.client.get(route).status_code, 404)
+        directory = DATA / 'ocr' / Path(pc['photo']).stem
+        directory.mkdir(parents=True)
+        Image.new('RGB', (3, 2), (30, 20, 10)).save(directory / 'rot_img.png')
+        saved = self.client.get(f'/api/pcs/{pc["id"]}').get_json()
+        self.assertEqual(saved['rotated_image_url'], route)
+        with self.client.get(route) as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, 'image/png')
+            with Image.open(io.BytesIO(response.data)) as image:
+                self.assertEqual(image.getpixel((0, 0)), (30, 20, 10))
+        self.client.delete(f'/api/pcs/{pc["id"]}')
+        self.assertFalse(directory.exists())
+        self.assertEqual(self.client.get(route).status_code, 404)
+
+    def test_180_preview_for_existing_and_new_records(self):
+        pc = self.add()
+        route = f'/pcs/{pc["id"]}/rotated-image-180'
+        self.assertEqual(self.client.get(route).status_code, 404)
+        directory = DATA / "ocr" / Path(pc["photo"]).stem
+        directory.mkdir(parents=True)
+        image = Image.new("RGB", (3, 2), "white")
+        image.putpixel((0, 0), (10, 20, 30))
+        image.save(directory / "rot_img.png")
+        record = self.client.get(f'/api/pcs/{pc["id"]}').get_json()
+        self.assertEqual(record["rotated_180_image_url"], route)
+        for saved in (False, True):
+            if saved:
+                image.transpose(Image.Transpose.ROTATE_180).save(directory / "rot_img_180.png")
+            with self.client.get(route) as response:
+                self.assertEqual(response.status_code, 200)
+                with Image.open(io.BytesIO(response.data)) as flipped:
+                    self.assertEqual(flipped.getpixel((2, 1)), (10, 20, 30))
+        self.client.delete(f'/api/pcs/{pc["id"]}')
+        self.assertEqual(self.client.get(route).status_code, 404)
+
     def test_deleted_during_ocr_does_not_return(self):
         pc = self.add()
         def concurrent_delete(path):
@@ -117,11 +157,15 @@ class ShelfTests(unittest.TestCase):
             def save_to_json(self, path): pass
         from unittest.mock import Mock
         pipeline = Mock()
-        pipeline.predict.return_value = [Result(rec_texts=['A', 'B'], rec_scores=[.8, 1.0])]
+        import numpy as np
+        pipeline.predict.return_value = [Result(rec_texts=['A', 'B'], rec_scores=[.8, 1.0], doc_preprocessor_res={'rot_img': np.full((2, 3, 3), [10, 20, 30], dtype=np.uint8)})]
         with patch('ocr.get_pipeline', return_value=pipeline):
             result = extract_text(UPLOADS / 'test.jpg')
         self.assertAlmostEqual(result['confidence'], .9)
         self.assertEqual(result['lines'][0]['confidence'], .8)
+        with Image.open(DATA / 'ocr' / 'test' / 'rot_img.png') as image:
+            self.assertEqual(image.size, (3, 2))
+            self.assertEqual(image.getpixel((0, 0)), (30, 20, 10))
 
     def test_json_download_and_request_trace(self):
         pc = self.add()

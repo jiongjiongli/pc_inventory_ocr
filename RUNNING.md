@@ -124,10 +124,26 @@ docker compose exec -T web python export_excel.py
 docker compose cp web:/app/instance/exports/pc-inventory.xlsx ./pc-inventory.xlsx
 ```
 
-The workbook contains **SKU totals** (number of PCs and a location breakdown), **Location counts** (one SKU/row/column per line), **PC details**, **Needs review**, and **Report info**. It reads a snapshot of PostgreSQL without changing inventory. Only completed OCR with one unique SKU identified by a `SKU:` label or a code starting with `CLP` is counted by SKU; repeated identical labels are accepted, casing is normalized, and ambiguous or missing labels are listed for review. PCs still queued or processing are also listed for review; regenerate after OCR finishes.
+The workbook contains **SKU totals** (number of PCs and a location breakdown), **Location counts** (one SKU/row/column per line), **PC details**, **Needs review**, and **Report info**. It reads a snapshot of PostgreSQL without changing inventory. Only completed OCR with one unique SKU identified by a `SKU:` label or a code starting with `CLP` is counted by SKU; repeated identical labels are accepted, casing is normalized, and ambiguous or missing labels are grouped as NO_SKU and listed for review. PCs still queued or processing are also listed for review; regenerate after OCR finishes.
 
 Local usage with `DATABASE_URL` configured:
 
 ```sh
 python export_excel.py --output ./pc-inventory.xlsx
 ```
+
+Each item shows the preprocessor's rotated box image beside its recognized SKU and the confidence of the matching OCR line (the lowest score when the SKU appears on multiple lines). Click the image to open it at full size. Original photos, annotated OCR images, and full OCR text are hidden from the item view. Rotated images are saved as `instance/ocr/<photo-id>/rot_img.png`; requeue existing photos with `docker compose exec -T web python backfill_ocr.py --all` to generate them.
+
+Reprocess only finished records displaying **SKU: Not detected** with the 180-degree OCR fallback:
+
+```sh
+docker compose exec -T web python backfill_ocr.py --missing-sku
+```
+
+Records with recognized or ambiguous SKUs are preserved. Pending and processing records remain in their current queue state.
+
+Use **Download pc-inventory.xlsx** at the top of the shelf to generate and download a fresh Excel inventory. The download includes current OCR results and lists unfinished or unresolved records under Needs review. `GET /api/pc-inventory.xlsx` generates the workbook in memory for each request.
+
+Excel PC details and Needs review identify each PC with its shelf label (for example, Row 2 / Column 5 / PC 1) and Overall PC number. These numbers match the shelf page order by row, column, then database ID, and may change when inventory records are added or deleted.
+
+SKU totals and Location counts include NO_SKU for PCs without a unique recognized SKU, including pending, processing, empty, or failed OCR. PC details also shows NO_SKU; Needs review retains the reason. Unique SKUs and recognized-PC counts exclude this fallback group.

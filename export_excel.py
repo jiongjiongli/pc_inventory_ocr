@@ -1,6 +1,5 @@
 """Export SKU inventory from PostgreSQL to an Excel workbook."""
 import argparse
-import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,16 +9,7 @@ from psycopg.rows import dict_row
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
-SKU_PATTERN = re.compile(r"\bSKU\s*[:#：-]?\s*([A-Za-z0-9][A-Za-z0-9._/-]*)", re.IGNORECASE)
-
-CLP_PATTERN = re.compile(r'\bCLP[A-Za-z0-9._/-]*\b', re.IGNORECASE)
-
-def extract_sku(text):
-    candidates = {match.upper() for match in SKU_PATTERN.findall(text or '')}
-    candidates.update(match.upper() for match in CLP_PATTERN.findall(text or ''))
-    if len(candidates) == 1:
-        return next(iter(candidates)), ''
-    return None, 'Multiple SKU values detected' if candidates else 'No SKU label or CLP code detected'
+from sku import extract_sku
 
 def write_text(sheet, row):
     sheet.append(row)
@@ -29,9 +19,15 @@ def write_text(sheet, row):
             cell.data_type = 's'
 
 def build_workbook(records, output):
+    records = sorted(records, key=lambda pc: (pc['row_number'], pc['column_number'], pc['id']))
     totals, locations = Counter(), Counter()
+    position_counts = Counter()
     details, unresolved = [], []
-    for pc in records:
+    for overall_number, pc in enumerate(records, 1):
+        position = (pc['row_number'], pc['column_number'])
+        position_counts[position] += 1
+        label = f'Row {position[0]} / Column {position[1]} / PC {position_counts[position]}'
+        overall_label = f'Overall PC {overall_number}'
         sku, reason = extract_sku(pc.get('ocr_text', ''))
         status = pc.get('ocr_status', '')
         if status != 'completed':
@@ -40,8 +36,13 @@ def build_workbook(records, output):
             totals[sku] += 1
             locations[(sku, pc['row_number'], pc['column_number'])] += 1
         else:
-            unresolved.append([pc['id'], pc['row_number'], pc['column_number'], reason, pc.get('ocr_text', '')])
-        details.append([pc['id'], sku or '', pc['row_number'], pc['column_number'], pc['pc_type'], status, pc.get('ocr_confidence')])
+            locations[('NO_SKU', pc['row_number'], pc['column_number'])] += 1
+            unresolved.append([label, overall_label, pc['row_number'], pc['column_number'], reason, pc.get('ocr_text', '')])
+        details.append([label, overall_label, sku or 'NO_SKU', pc['row_number'], pc['column_number'], pc['pc_type'], status, pc.get('ocr_confidence')])
+    recognized_count = sum(totals.values())
+    unique_sku_count = len(totals)
+    if unresolved:
+        totals['NO_SKU'] += len(unresolved)
     book = Workbook()
     summary = book.active
     summary.title = 'SKU totals'
@@ -54,15 +55,15 @@ def build_workbook(records, output):
     for (sku, row, column), count in sorted(locations.items()):
         write_text(location_sheet, [sku, row, column, count])
     pcs = book.create_sheet('PC details')
-    pcs.append(['PC ID', 'SKU', 'Row', 'Column', 'PC type', 'OCR status', 'OCR confidence'])
+    pcs.append(['PC location', 'Overall PC', 'SKU', 'Row', 'Column', 'PC type', 'OCR status', 'OCR confidence'])
     for row in details:
         write_text(pcs, row)
     missing = book.create_sheet('Needs review')
-    missing.append(['PC ID', 'Row', 'Column', 'Reason', 'OCR text'])
+    missing.append(['PC location', 'Overall PC', 'Row', 'Column', 'Reason', 'OCR text'])
     for row in unresolved:
         write_text(missing, row)
     info = book.create_sheet('Report info')
-    for row in [['Generated (UTC)', datetime.now(timezone.utc).isoformat()], ['Total PCs', len(records)], ['PCs with a unique labeled SKU', sum(totals.values())], ['PCs needing review', len(unresolved)], ['Unique SKUs', len(totals)], ['Grouping', 'Completed OCR with exactly one unique labeled SKU or CLP code; SKUs normalized to uppercase. Missing or ambiguous SKUs are excluded from SKU totals.']]:
+    for row in [['Generated (UTC)', datetime.now(timezone.utc).isoformat()], ['Total PCs', len(records)], ['PCs with a unique labeled SKU', recognized_count], ['PCs needing review', len(unresolved)], ['Unique SKUs', unique_sku_count], ['Grouping', 'Completed OCR with exactly one unique labeled SKU or CLP code; SKUs normalized to uppercase. Missing, ambiguous, and unfinished OCR results are grouped as NO_SKU and listed under Needs review.']]:
         write_text(info, row)
     for sheet in book:
         sheet.freeze_panes = 'A2'
@@ -76,12 +77,13 @@ def build_workbook(records, output):
         for row in sheet.iter_rows(min_row=2):
             for cell in row:
                 cell.alignment = Alignment(vertical='top', wrap_text=True)
-    for row in pcs.iter_rows(min_row=2, min_col=7, max_col=7):
+    for row in pcs.iter_rows(min_row=2, min_col=8, max_col=8):
         row[0].number_format = '0.0%'
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
+    if not hasattr(output, 'write'):
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
     book.save(output)
-    return {'pcs': len(records), 'unique_skus': len(totals), 'needs_review': len(unresolved)}
+    return {'pcs': len(records), 'unique_skus': unique_sku_count, 'needs_review': len(unresolved)}
 
 def main():
     import os
