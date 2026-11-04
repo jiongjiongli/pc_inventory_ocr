@@ -220,3 +220,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 /pc-inventory.xlsx
+
+# macOS metadata
+.DS_Store
