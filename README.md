@@ -108,7 +108,7 @@ The local file is saved to `instance/exports/pc-inventory.xlsx`. The browser dow
 
 ### Use it on a phone
 
-Replace `SERVER_IP` with the computer's local network IPv4 address (for example, `192.168.1.100`), then open `http://SERVER_IP:8080` in Safari on an iPhone using the same Wi-Fi. Allow incoming connections on that port through the host firewall. Camera behavior depends on the browser; a photo chooser is also available.
+Open `http://SERVER_IP:8080` in Safari on an iPhone using the same Wi-Fi. Allow incoming connections on that port through the host firewall. Camera behavior depends on the browser; a photo chooser is also available.
 
 <img src="docs/images/mobile-shelf.png" alt="Mobile shelf inventory with device totals and records" width="390">
 
@@ -130,7 +130,7 @@ docker compose ps
 curl --fail http://SERVER_IP:8080/api/health
 ```
 
-Open `http://SERVER_IP:8080/`, replacing `SERVER_IP` with the host computer's local network IPv4 address. This address also works on an iPhone connected to the same Wi-Fi. Compose runs the web application, OCR worker, and PostgreSQL database. The Docker build installs the frontend and Python dependencies, so host Python and Node installations are unnecessary. Initial builds and first recognition can take longer because dependencies and model weights must download. OCR inference runs locally on CPU.
+Open `http://SERVER_IP:8080/`. This address also works on an iPhone connected to the same Wi-Fi. Compose runs the web application, OCR worker, and PostgreSQL database. The Docker build installs the frontend and Python dependencies, so host Python and Node installations are unnecessary. Initial builds and first recognition can take longer because dependencies and model weights must download. OCR inference runs locally on CPU.
 
 To change the host port:
 
