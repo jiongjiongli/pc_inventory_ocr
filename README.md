@@ -167,7 +167,7 @@ Open `http://SERVER_IP:5173` on the computer or an iPhone using the same Wi-Fi. 
 
 ```mermaid
 flowchart LR
-    Browser[React browser / phone] -->|Photo + location| Web[Flask API / Gunicorn]
+    Browser[Browser / phone] -->|Photo + location| Web[Flask API / Gunicorn]
     Web -->|Record + pending job| DB[(PostgreSQL)]
     Web -->|Validated image| Files[(Shared photo and OCR volume)]
     Worker[Python OCR worker] -->|Claim job / save result| DB
